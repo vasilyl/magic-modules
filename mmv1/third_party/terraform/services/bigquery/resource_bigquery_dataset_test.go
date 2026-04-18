@@ -1,18 +1,15 @@
-// Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
 package bigquery_test
 
 import (
 	"fmt"
-	"regexp"
-	"strings"
-	"testing"
-
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google/google/acctest"
 	"github.com/hashicorp/terraform-provider-google/google/envvar"
 	"google.golang.org/api/bigquery/v2"
+	"regexp"
+	"strings"
+	"testing"
 )
 
 func TestAccBigQueryDataset_basic(t *testing.T) {
@@ -319,6 +316,52 @@ func TestAccBigQueryDataset_access(t *testing.T) {
 	})
 }
 
+func TestAccBigQueryDataset_accessMixedCase_userByEmail(t *testing.T) {
+	t.Parallel()
+
+	datasetID := fmt.Sprintf("tf_test_access_%s", acctest.RandString(t, 10))
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckBigQueryDatasetDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccBigQueryDataset_accessMixedCase(datasetID, "user_by_email", "alicE@google.COM"),
+			},
+			{
+				ResourceName:            "google_bigquery_dataset.access_test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"labels", "terraform_labels"},
+			},
+		},
+	})
+}
+
+func TestAccBigQueryDataset_accessMixedCase_groupByEmail(t *testing.T) {
+	t.Parallel()
+
+	datasetID := fmt.Sprintf("tf_test_access_%s", acctest.RandString(t, 10))
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckBigQueryDatasetDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccBigQueryDataset_accessMixedCase(datasetID, "group_by_email", "MAGIC-MODULES@gOOgle.com"),
+			},
+			{
+				ResourceName:            "google_bigquery_dataset.access_test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"labels", "terraform_labels"},
+			},
+		},
+	})
+}
+
 func TestAccBigQueryDataset_regionalLocation(t *testing.T) {
 	t.Parallel()
 
@@ -514,6 +557,44 @@ func TestAccBigQueryDataset_externalCatalogDatasetOptions_update(t *testing.T) {
 			},
 			{
 				ResourceName:            "google_bigquery_dataset.dataset",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"labels", "terraform_labels"},
+			},
+		},
+	})
+}
+
+func TestAccBigQueryDataset_collationUpdate(t *testing.T) {
+	t.Parallel()
+
+	datasetID := fmt.Sprintf("tf_test_%s", acctest.RandString(t, 10))
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckBigQueryDatasetDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccBigQueryDataset_defaultCollation(datasetID, "und:ci"),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("google_bigquery_dataset.test", "default_collation", "und:ci"),
+				),
+			},
+			{
+				ResourceName:            "google_bigquery_dataset.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"labels", "terraform_labels"},
+			},
+			{
+				Config: testAccBigQueryDataset_defaultCollation(datasetID, ""),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("google_bigquery_dataset.test", "default_collation", ""),
+				),
+			},
+			{
+				ResourceName:            "google_bigquery_dataset.test",
 				ImportState:             true,
 				ImportStateVerify:       true,
 				ImportStateVerifyIgnore: []string{"labels", "terraform_labels"},
@@ -839,6 +920,19 @@ resource "google_bigquery_dataset" "access_test" {
 `, otherDatasetID, otherTableID, datasetID)
 }
 
+func testAccBigQueryDataset_accessMixedCase(datasetID, accessType, email string) string {
+	return fmt.Sprintf(`
+resource "google_bigquery_dataset" "access_test" {
+  dataset_id = "%s"
+
+  access {
+    role   = "OWNER"
+    %s = "%s"
+  }
+}
+`, datasetID, accessType, email)
+}
+
 func testAccBigQueryDataset_cmek(pid, datasetID, kmsKey string) string {
 	return fmt.Sprintf(`
 data "google_project" "project" {
@@ -1011,4 +1105,16 @@ resource "google_bigquery_dataset" "dataset" {
   }
 }
 `, context)
+}
+
+func testAccBigQueryDataset_defaultCollation(datasetID, collation string) string {
+	return fmt.Sprintf(`
+resource "google_bigquery_dataset" "test" {
+  dataset_id        = "%s"
+  friendly_name     = "foo"
+  description       = "This is a foo description"
+  location          = "US"
+  default_collation = "%s"
+}
+`, datasetID, collation)
 }
